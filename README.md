@@ -209,64 +209,52 @@ O script executa o seguinte fluxo:
 **`experimento_analise.csv`** - Agregação estatística dos resultados por API (média, desvio padrão, mediana)
 
 
-##3. Execução do Experimento
+## 3. Execução do Experimento
 Esta etapa descreve o procedimento operacional para a coleta de dados, garantindo que as medições sejam consistentes e que as variáveis de confusão (como instabilidade de rede) sejam mitigadas conforme planejado.
 
-#3.1. Configuração e Autenticação
+# 3.1. Configuração e Autenticação
 
 Credenciais: Serão gerados Personal Access Tokens (PAT) do GitHub para autenticação. Para evitar o esgotamento da cota de requisições (Rate Limiting), o script alternará entre 3 tokens distintos caso um limite seja atingido.
-
 Aquecimento (Warm-up): Antes da coleta oficial, será executada uma rodada de "aquecimento" com 5 repositórios aleatórios (fora da amostra principal) para garantir que as conexões TCP/SSL estejam estabelecidas e que as bibliotecas estejam carregadas na memória, evitando latência extra na primeira medição real.
 
-#3.2. Procedimento de Coleta (Loop Principal) O script iterará sobre a lista de 185 repositórios (resurrected_repos.csv). Para cada repositório, o seguinte fluxo atômico será executado:
+# 3.2. Procedimento de Coleta (Loop Principal) O script iterará sobre a lista de 185 repositórios (resurrected_repos.csv). Para cada repositório, o seguinte fluxo atômico será executado:
 
 Isolamento de Tratamento:
-
 Primeiro, executa-se o Tratamento T1 (GraphQL).
-
 Em seguida, aguarda-se um intervalo de cooldown de 2 segundos.
-
 Depois, executa-se o Tratamento T2 (REST).
-
 Justificativa: A ordem fixa com intervalo mitiga a interferência de cache de rede local, mas garante que as condições da API do GitHub sejam temporalmente próximas para ambos os tratamentos.
-
 Repetições (N=5):
-
 Para cada tratamento, a consulta será disparada 5 vezes consecutivas.
-
 Registro: Para cada disparo, registra-se:
-
 timestamp_inicio e timestamp_fim.
-
 status_code (apenas 200 OK são aceitos).
-
 payload_size_bytes (tamanho do corpo da resposta descomprimido).
-
 Os valores das métricas de negócio (Data, Documentação, Menções, etc.).
-
 Verificação de Paridade (Data Parity Check):
-
 Em tempo de execução, o script compara se os dados de negócio retornados pelo GraphQL são idênticos aos do REST (ex: se o número de issues fechadas é igual).
-
 Se houver divergência nos dados (não no tempo/tamanho), o repositório é marcado com uma flag data_mismatch para investigação manual posterior, pois isso indica uma falha na Validade de Construção.
 
-#3.3. Tratamento de Exceções e Limites
+# 3.3. Tratamento de Exceções e Limites
 
 Rate Limiting: Se a API retornar código 403 ou 429, o script pausará a execução pelo tempo indicado no cabeçalho X-RateLimit-Reset mais 10 segundos de margem de segurança.
-
 Timeouts: Requisições que excederem 30 segundos serão abortadas e registradas como falha (timeout).
 
 
-##4. Análise de Resultados (Cenário Simulado: GraphQL Superior)Nesta etapa, analisamos os dados coletados das 370 medições válidas (185 repositórios $\times$ 2 tratamentos). O objetivo foi validar estatisticamente se a API GraphQL supera a API REST em velocidade (RQ1) e eficiência de dados (RQ2) no contexto de recuperação de metadados de repositórios "ressuscitados".
+## 4. Análise de Resultados (Cenário Simulado: GraphQL Superior)Nesta etapa, analisamos os dados coletados das 370 medições válidas (185 repositórios $\times$ 2 tratamentos). O objetivo foi validar estatisticamente se a API GraphQL supera a API REST em velocidade (RQ1) e eficiência de dados (RQ2) no contexto de recuperação de metadados de repositórios "ressuscitados".
 
-#4.1. Estatística Descritiva e Validação dos Dados
-Após a limpeza dos dados (remoção de outliers extremos causados por timeouts de rede), observou-se uma diferença substancial na tendência central entre os dois grupos.
+# 4.1. Estatística Descritiva e Validação dos Dados
+Após a limpeza dos dados (remoção de outliers extremos causados por timeouts de rede), observou-se essa diferença estre os grupos:
 
-MétricaTratamento T1 (GraphQL)Tratamento T2 (REST)Diferença RelativaMédia ($\mu$)380 ms1.150 msGraphQL ~3,02x mais rápidoMediana ($M_d$)365 ms1.120 msGraphQL ~3,06x mais rápidoDesvio Padrão ($\sigma$)45 ms210 msREST apresenta maior variabilidadeP99 (Pior Caso)520 ms1.850 msPicos de latência maiores no REST
+Métrica,Tratamento T1 (GraphQL),Tratamento T2 (REST),Diferença Relativa
+Média (μ),380 ms, .150 ms, "GraphQL ~3,02x mais rápido"
+Mediana (Md​),365 ms, 1.120 ms, "GraphQL ~3,06x mais rápido"
+Desvio Padrão (σ),45 ms,210 ms, REST apresenta maior variabilidade
+P99 (Pior Caso),520 ms,1.850 ms, Picos de latência maiores no REST
 
-#4.2. Teste de Hipóteses (Inferência Estatística)Para confirmar se essa diferença de "3x" é estatisticamente significativa e não fruto do acaso, aplicamos testes inferenciais.Verificação de Normalidade (Shapiro-Wilk):$W_{REST} = 0.85$ ($p < 0.05$) - Distribuição não normal.$W_{GraphQL} = 0.92$ ($p < 0.05$) - Distribuição não normal.Como as distribuições de tempo de latência não seguiram uma curva normal (o que é comum em redes de computadores), optou-se pelo teste não-paramétrico.Teste de Wilcoxon Signed-Rank (RQ1 - Velocidade):Hipótese Nula ($H_0$): $T_{REST} \le T_{GraphQL}$Resultado do Teste: $W = 0$, $z = -11.5$p-valor: $p < 0.0001$Decisão: Como $p < 0.05$, rejeitamos a Hipótese Nula ($H_0$). Há evidência estatística robusta de que o tempo de resposta do GraphQL é significativamente menor que o do REST.
+# 4.2. Teste de Hipóteses (Inferência Estatística)Para confirmar se essa diferença de "3x" é estatisticamente significativa e não fruto do acaso, aplicamos testes inferenciais.Verificação de Normalidade (Shapiro-Wilk):$W_{REST} = 0.85$ ($p < 0.05$) - Distribuição não normal.$W_{GraphQL} = 0.92$ ($p < 0.05$) - Distribuição não normal.Como as distribuições de tempo de latência não seguiram uma curva normal (o que é comum em redes de computadores), optou-se pelo teste não-paramétrico.Teste de Wilcoxon Signed-Rank (RQ1 - Velocidade):Hipótese Nula ($H_0$): $T_{REST} \le T_{GraphQL}$Resultado do Teste: $W = 0$, $z = -11.5$p-valor: $p < 0.0001$Decisão: Como $p < 0.05$, rejeitamos a Hipótese Nula ($H_0$). Há evidência estatística robusta de que o tempo de resposta do GraphQL é significativamente menor que o do REST.
 
-#4.3. Análise de Payload (RQ2 - Eficiência de Transferência)
+# 4.3. Análise de Payload (RQ2 - Eficiência de Transferência)
 Embora o foco principal fosse a velocidade, a análise do tamanho da resposta ajuda a explicar o ganho de performance.
 
 Média Payload GraphQL: 15 KB
@@ -278,4 +266,4 @@ Conclusão RQ2: O GraphQL transferiu aproximadamente 88% menos dados pela rede.
 Isso valida a vantagem do Over-fetching mitigado: enquanto o REST retornou objetos completos de users e issues com dezenas de campos desnecessários, o GraphQL trouxe apenas os campos solicitados (ex: apenas a date e o body dos comentários).
 
 
-#4.4. Discussão dos ResultadosA vantagem de velocidade de 3x observada no GraphQL deve-se a dois fatores arquiteturais identificados durante a execução:Redução de Latência de RTT (Round Trip Time): O cenário REST exigiu, em média, 4 requisições sequenciais por repositório (Repo Info $\rightarrow$ Issues $\rightarrow$ Commits $\rightarrow$ Contributors). O GraphQL resolveu o grafo de dados no lado do servidor, retornando tudo em 1 requisição HTTP. O "custo" de compor os dados foi movido da rede (lenta e instável) para o servidor do GitHub (rápido e local).Menor Overhead de Serialização: Processar 15 KB de JSON é computacionalmente mais rápido para o cliente (nosso script Python) do que processar 125 KB, contribuindo marginalmente para o tempo total.Conclusão da Análise:Os dados suportam a adoção do GraphQL para este caso de uso. A Hipótese Alternativa ($H_A$) para RQ1 foi confirmada com alta significância estatística e grande tamanho de efeito.
+# 4.4. Discussão dos ResultadosA vantagem de velocidade de 3x observada no GraphQL deve-se a dois fatores arquiteturais identificados durante a execução:Redução de Latência de RTT (Round Trip Time): O cenário REST exigiu, em média, 4 requisições sequenciais por repositório (Repo Info $\rightarrow$ Issues $\rightarrow$ Commits $\rightarrow$ Contributors). O GraphQL resolveu o grafo de dados no lado do servidor, retornando tudo em 1 requisição HTTP. O "custo" de compor os dados foi movido da rede (lenta e instável) para o servidor do GitHub (rápido e local).Menor Overhead de Serialização: Processar 15 KB de JSON é computacionalmente mais rápido para o cliente (nosso script Python) do que processar 125 KB, contribuindo marginalmente para o tempo total.Conclusão da Análise:Os dados suportam a adoção do GraphQL para este caso de uso. A Hipótese Alternativa ($H_A$) para RQ1 foi confirmada com alta significância estatística e grande tamanho de efeito.
